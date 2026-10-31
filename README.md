@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that checks HTTP and TCP endpoints from more than one region and sends a Telegram alert when an endpoint goes down. It runs on the Workers free plan.
 
-Status: the checks, the fan-out to regions, the Telegram alerts, and the config schema work in the tests. Nothing is deployed.
+Status: the code for phases 1 to 5 is complete, and the tests pass. The Worker has no deploy yet.
 
 ## How it works
 
