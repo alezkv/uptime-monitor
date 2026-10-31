@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that checks HTTP and TCP endpoints from more than one region and sends a Telegram alert when an endpoint goes down. It runs on the Workers free plan.
 
-Status: the checks and the fan-out to regions work. `State` and the alerts are not written yet. Nothing is deployed.
+Status: the checks, the fan-out to regions, and the Telegram alerts work in the tests. The config has no schema yet. Nothing is deployed.
 
 ## How it works
 
@@ -11,6 +11,23 @@ Status: the checks and the fan-out to regions work. `State` and the alerts are n
 3. For each region, the Worker calls a `Probe` Durable Object. Each `Probe` object has a location hint for its region, so its checks leave from that region.
 4. The Worker sends all results to the `State` Durable Object.
 5. `State` counts the failures. It sends a Telegram message when a monitor goes down or recovers.
+
+## Alerts
+
+`State` sends one Telegram message when a monitor goes down, and one when it recovers:
+
+```
+🔴 DOWN Authelia (auth.example.com)
+weur FRA: status 503, expected 200 (120 ms)
+eeur WAW: timeout after 10000 ms
+enam EWR: ok (95 ms)
+```
+
+- A region is down after `failThreshold` consecutive failures.
+- A monitor is down when at least `min(regionQuorum, number of regions)` regions are down.
+- If Telegram does not accept a message, `State` keeps the old state. The next check of the monitor sends the message again.
+- A failed `Probe` call does not count as a failure of its monitors. After 5 runs in a row with no result from a region, `State` sends one "probe failed" message. It sends one more message when the region works again.
+- A monitor that you remove or disable loses its state, with no message.
 
 ## Development environment
 
