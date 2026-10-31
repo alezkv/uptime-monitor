@@ -12,7 +12,7 @@ crons = ["* * * * *"]
 # Holds one key, "config". Create it in phase 0: npx wrangler kv namespace create uptime-config
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "replace-in-phase-0"
+id = "e448eed6c9ed43089f9d5856c7346451"
 
 # One object for each region, named "probe-<region>".
 [[durable_objects.bindings]]
