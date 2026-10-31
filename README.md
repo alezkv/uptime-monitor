@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that checks HTTP and TCP endpoints from more than one region and sends a Telegram alert when an endpoint goes down. It runs on the Workers free plan.
 
-Status: skeleton. The handlers are empty until the phases of the implementation plan are done.
+Status: the checks and the fan-out to regions work. `State` and the alerts are not written yet. Nothing is deployed.
 
 ## How it works
 
@@ -41,3 +41,19 @@ npx wrangler secret put TELEGRAM_CHAT_ID
 ```
 
 A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set each such secret with `wrangler secret put NAME`.
+
+## Local test run
+
+1. Convert the YAML to JSON: `nix shell nixpkgs#yq-go -c yq -o=json -I=0 . monitors.example.yaml > /tmp/config.json`.
+2. Load it into local KV: `npx wrangler kv key put --binding CONFIG config --path /tmp/config.json --local`.
+3. Start the Worker: `npm run dev`.
+4. Start a cron run: `curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"`.
+5. Read the line that starts with `{"minute"` in the Wrangler output. It has one result for each monitor and region.
+
+Local Wrangler ignores location hints, so all regions show the same colo.
+
+## Known behavior
+
+- Authelia forward-auth returns `401` to a Worker `fetch()`, but `302` to `curl`.
+- `tcp: { tls: true }` checks the certificate. A self-signed certificate fails.
+- A Worker cannot open TCP to port 25 or to a Cloudflare IP address, and it has no UDP.
