@@ -1,0 +1,30 @@
+name = "uptime"
+main = "src/index.ts"
+compatibility_date = "2026-10-20"
+
+[observability]
+enabled = true
+
+# Each minute. A monitor with a longer interval skips the runs between.
+[triggers]
+crons = ["* * * * *"]
+
+# Holds one key, "config". Create it in phase 0: npx wrangler kv namespace create uptime-config
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "replace-in-phase-0"
+
+# One object for each region, named "probe-<region>".
+[[durable_objects.bindings]]
+name = "PROBE"
+class_name = "Probe"
+
+# One object, named "state". It holds the up or down state and sends the alerts.
+[[durable_objects.bindings]]
+name = "STATE"
+class_name = "State"
+
+# The free plan accepts only SQLite-backed Durable Objects.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Probe", "State"]

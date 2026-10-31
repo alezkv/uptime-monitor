@@ -1,0 +1,31 @@
+# A sample config. The real list is outside this repository. See README.md.
+defaults:
+  regions: [weur, eeur, enam]
+  interval: 1          # minutes
+  timeout: 10000       # ms
+  alert: { failThreshold: 2, regionQuorum: 2 }
+
+monitors:
+  - id: example-web
+    name: Example web
+    type: http
+    target: https://example.com/
+    http:
+      expectStatus: [200]
+      bodyContains: Example Domain
+
+  - id: example-api
+    name: Example API with a token
+    type: http
+    target: https://api.example.com/health
+    http:
+      headers:
+        Authorization: secret:EXAMPLE_TOKEN   # the Worker reads env.EXAMPLE_TOKEN
+
+  - id: example-imaps
+    name: Example IMAPS
+    type: tcp
+    target: mail.example.com:993
+    tcp: { tls: true }
+    interval: 5
+    regions: [weur]
