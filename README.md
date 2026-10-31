@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that checks HTTP and TCP endpoints from more than one region and sends a Telegram alert when an endpoint goes down. It runs on the Workers free plan.
 
-Status: the checks, the fan-out to regions, and the Telegram alerts work in the tests. The config has no schema yet. Nothing is deployed.
+Status: the checks, the fan-out to regions, the Telegram alerts, and the config schema work in the tests. Nothing is deployed.
 
 ## How it works
 
@@ -31,7 +31,7 @@ enam EWR: ok (95 ms)
 
 ## Development environment
 
-The Nix flake supplies Node.js 22. Wrangler and Vitest are dev dependencies in `node_modules`.
+The Nix flake supplies Node.js 22. The config script needs Node.js 22.18 or later, because it runs a `.ts` file with no build step. Wrangler and Vitest are dev dependencies in `node_modules`.
 
 1. Run `direnv allow`.
 2. Run `npm install`.
@@ -45,10 +45,16 @@ The Nix flake supplies Node.js 22. Wrangler and Vitest are dev dependencies in `
 | `npm run types` | Generates `worker-configuration.d.ts` again. Run it after you change `wrangler.toml`. |
 | `npm run dev` | Starts a local Worker. To start a cron run, open `/__scheduled`. |
 | `npm run deploy` | Deploys the Worker. |
+| `npm run config:check -- <file>` | Validates a monitors YAML file. |
+| `npm run config:push -- <file>` | Validates the file, then writes it to the `config` key in KV. Add `--local` to write to the local KV of `npm run dev`. |
 
 ## Configuration
 
 The repository has no real list of monitors. `monitors.example.yaml` shows the format. Keep the real list in a file outside the repository.
+
+The schema is in `src/config.ts`. It rejects an unknown field, so a misspelled field name gives an error and is not ignored. The cron handler validates the config on each run. If the config is not valid, the handler logs the error and makes no checks.
+
+KV can take up to 60 seconds to show a new value in all locations. Thus a push can take effect one or two runs late.
 
 Secrets go in Cloudflare only:
 
@@ -57,15 +63,14 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_CHAT_ID
 ```
 
-A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set each such secret with `wrangler secret put NAME`.
+A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set each such secret with `wrangler secret put NAME`. The schema rejects `secret:TELEGRAM_BOT_TOKEN` and `secret:TELEGRAM_CHAT_ID`, so a monitor cannot send these secrets to a target.
 
 ## Local test run
 
-1. Convert the YAML to JSON: `nix shell nixpkgs#yq-go -c yq -o=json -I=0 . monitors.example.yaml > /tmp/config.json`.
-2. Load it into local KV: `npx wrangler kv key put --binding CONFIG config --path /tmp/config.json --local`.
-3. Start the Worker: `npm run dev`.
-4. Start a cron run: `curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"`.
-5. Read the line that starts with `{"minute"` in the Wrangler output. It has one result for each monitor and region.
+1. Load the config into local KV: `npm run config:push -- monitors.example.yaml --local`.
+2. Start the Worker: `npm run dev`.
+3. Start a cron run: `curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"`.
+4. Read the line that starts with `{"minute"` in the Wrangler output. It has one result for each monitor and region.
 
 Local Wrangler ignores location hints, so all regions show the same colo.
 

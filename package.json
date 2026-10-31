@@ -7,13 +7,18 @@
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p test",
-    "types": "wrangler types"
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p test && tsc --noEmit -p scripts",
+    "types": "wrangler types",
+    "config:check": "node scripts/config.ts check",
+    "config:push": "node scripts/config.ts push"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.8",
+    "@types/node": "^22.20.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5",
-    "wrangler": "^4.153.0"
+    "wrangler": "^4.153.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   }
 }

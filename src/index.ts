@@ -1,16 +1,34 @@
-import { byRegion, type Config, isDue, type Region, resolve, type Result } from "./config";
+import { byRegion, isDue, parseConfig, type Region, resolve, type Result } from "./config";
 import { Probe } from "./probe";
 import { State } from "./state";
 
 export { Probe, State };
 
+// REGIONS in config.ts must hold each location hint of the runtime, and no other value.
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type Assert<T extends true> = T;
+type RegionsMatch = Assert<Same<Region, DurableObjectLocationHint>>;
+
 export default {
 	async scheduled(controller, env): Promise<void> {
-		const config = await env.CONFIG.get<Config>("config", "json");
-		if (!config) {
+		const raw = await env.CONFIG.get("config");
+		if (raw === null) {
 			console.warn("no config in KV, key \"config\"");
 			return;
 		}
+		let value: unknown;
+		try {
+			value = JSON.parse(raw);
+		} catch {
+			console.error("config in KV is not valid JSON");
+			return;
+		}
+		const parsed = parseConfig(value);
+		if (!parsed.ok) {
+			console.error(`config in KV is not valid:\n${parsed.error}`);
+			return;
+		}
+		const config = parsed.config;
 
 		const minute = Math.floor(controller.scheduledTime / 60_000);
 		const groups = [...byRegion(resolve(config).filter((m) => isDue(m, minute)))];
