@@ -12,6 +12,9 @@ export default defineConfig({
 				bindings: {
 					TELEGRAM_BOT_TOKEN: "test-bot",
 					TELEGRAM_CHAT_ID: "42",
+					STATUS_TOKEN: "test-status-token",
+					// A header secret of a monitor. GET /status must not show it.
+					WEB_KEY: "test-header-value",
 				},
 			},
 		}),

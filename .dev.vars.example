@@ -1,3 +1,5 @@
 # Copy to .dev.vars for `wrangler dev`. Do not commit .dev.vars.
 TELEGRAM_BOT_TOKEN=123456:ABC
 TELEGRAM_CHAT_ID=123456789
+# The bearer token of GET /status. Remove this line to turn the route off.
+STATUS_TOKEN=replace-with-a-long-random-value

@@ -10,6 +10,43 @@ interface ProbeRow {
 	alerted: boolean;
 }
 
+/** The answer of `State.status()` and of `GET /status`. */
+export interface Status {
+	now: number;
+	/** The time of the last `record()` call. Memory only, so null after a restart. */
+	lastRun: number | null;
+	/** The time when this copy of the object started. `last` and `lastRun` hold only what came after it. */
+	memorySince: number;
+	note: string;
+	/** Each region that the config uses. `misses` counts the runs in a row with no result, up to the limit. */
+	probes: { region: Region; misses: number; alerted: boolean }[];
+	monitors: MonitorStatus[];
+}
+
+export interface MonitorStatus {
+	id: string;
+	name: string;
+	type: "http" | "tcp";
+	target: string;
+	/** The state that the alerts use. It changes only after Telegram accepts the alert. */
+	state: "up" | "down";
+	/** The time of the "down" alert. */
+	since: number | null;
+	regions: {
+		region: Region;
+		/** Down after `failThreshold` failures in a row. */
+		state: "up" | "down";
+		fails: number;
+		/** Null when the object has no result in memory. */
+		last: LastResult | null;
+	}[];
+}
+
+export type LastResult = Omit<Result, "id" | "region">;
+
+const MEMORY_NOTE =
+	"last and lastRun are in memory only. They are null after the State object restarts, until the next check.";
+
 /**
  * The one object that holds the up or down state of each monitor and sends the alerts.
  *
@@ -23,6 +60,9 @@ interface ProbeRow {
 export class State extends DurableObject<Env> {
 	/** The last result of each monitor and region, for the alert text. Memory only. */
 	private last = new Map<string, Result>();
+	/** The time of the last run. Memory only. */
+	private lastRun: number | null = null;
+	private readonly memorySince = Date.now();
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -35,6 +75,7 @@ export class State extends DurableObject<Env> {
 
 	/** `missing` lists the regions whose Probe call failed. They give no result in this run. */
 	async record(config: Config, results: Result[], missing: Region[]): Promise<void> {
+		this.lastRun = Date.now();
 		const monitors = new Map(resolve(config).map((m) => [m.id, m]));
 		const fails = this.loadFails();
 		const down = this.loadDown();
@@ -80,12 +121,55 @@ export class State extends DurableObject<Env> {
 		await this.recordProbes(new Set(results.map((r) => r.region)), missing, monitors);
 	}
 
+	/**
+	 * The data for `GET /status`. It only reads, so it writes no row.
+	 * It shows only the monitors and regions of `config`.
+	 */
+	async status(config: Config): Promise<Status> {
+		const monitors = resolve(config);
+		const fails = this.loadFails();
+		const down = this.loadDown();
+		const probes = this.loadProbes();
+		const used = [...new Set(monitors.flatMap((m) => m.regions))];
+		return {
+			now: Date.now(),
+			lastRun: this.lastRun,
+			memorySince: this.memorySince,
+			note: MEMORY_NOTE,
+			probes: used.map((region) => ({
+				region,
+				misses: probes.get(region)?.misses ?? 0,
+				alerted: probes.get(region)?.alerted ?? false,
+			})),
+			// Only these fields. The http settings can hold header names of secrets.
+			monitors: monitors.map((m) => {
+				const since = down.get(m.id);
+				return {
+					id: m.id,
+					name: m.name,
+					type: m.type,
+					target: m.target,
+					state: since === undefined ? "up" : "down",
+					since: since ?? null,
+					regions: m.regions.map((region) => {
+						const k = key(m.id, region);
+						const n = fails.get(k) ?? 0;
+						const r = this.last.get(k);
+						return {
+							region,
+							state: n >= m.alert.failThreshold ? "down" : "up",
+							fails: n,
+							last: r ? { colo: r.colo, ok: r.ok, status: r.status, error: r.error, ms: r.ms, at: r.at } : null,
+						};
+					}),
+				};
+			}),
+		};
+	}
+
 	/** A failed Probe call does not count as a failure of its monitors. This alert tells that a region checks nothing. */
 	private async recordProbes(reported: Set<Region>, missing: Region[], monitors: Map<string, Resolved>) {
-		const rows = new Map<string, ProbeRow>();
-		for (const row of this.sql<{ region: string; misses: number; alerted: number }>("SELECT * FROM probes")) {
-			rows.set(row.region, { misses: row.misses, alerted: row.alerted === 1 });
-		}
+		const rows = this.loadProbes();
 
 		const used = new Set([...monitors.values()].flatMap((m) => m.regions));
 		for (const region of rows.keys()) {
@@ -145,6 +229,11 @@ export class State extends DurableObject<Env> {
 	private loadDown(): Map<string, number> {
 		const rows = this.sql<{ id: string; since: number }>("SELECT * FROM down");
 		return new Map(rows.map((r) => [r.id, r.since]));
+	}
+
+	private loadProbes(): Map<string, ProbeRow> {
+		const rows = this.sql<{ region: string; misses: number; alerted: number }>("SELECT * FROM probes");
+		return new Map(rows.map((r) => [r.region, { misses: r.misses, alerted: r.alerted === 1 }]));
 	}
 
 	/** Returns false if Telegram did not accept the message. */
