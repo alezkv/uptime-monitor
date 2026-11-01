@@ -11,7 +11,8 @@ Status: the code for phases 1 to 5 is complete, and the tests pass. The Worker r
 3. For each region, the Worker calls a `Probe` Durable Object. Each `Probe` object has a location hint for its region, so its checks leave from that region.
 4. The Worker sends all results to the `State` Durable Object.
 5. `State` counts the failures. It sends a Telegram message when a monitor goes down or recovers.
-6. `GET /status` shows the state of each monitor. It needs a token. See [Status endpoint](#status-endpoint).
+6. The Worker sends a heartbeat ping to the `dms` Worker. See [Heartbeat](#heartbeat).
+7. `GET /status` shows the state of each monitor. It needs a token. See [Status endpoint](#status-endpoint).
 
 ## Alerts
 
@@ -29,6 +30,19 @@ enam EWR: ok (95 ms)
 - If Telegram does not accept a message, `State` keeps the old state. The next check of the monitor sends the message again.
 - A failed `Probe` call does not count as a failure of its monitors. After 5 runs in a row with no result from a region, `State` sends one "probe failed" message. It sends one more message when the region works again.
 - A monitor that you remove or disable loses its state, with no message.
+
+## Heartbeat
+
+After each complete run, the cron handler sends `POST /ping/uptime-monitor` to the `dms` Worker of [dead-mans-switch](https://github.com/alezkv/dead-mans-switch). If `dms` gets no ping in time, it sends a Telegram alert. Thus you also get an alert when this monitor stops.
+
+- The ping goes through the service binding `DMS` in `wrangler.toml`. A Worker cannot fetch another Worker on `workers.dev` by URL.
+- The ping carries `Authorization: Bearer <DMS_PING_TOKEN>`. The token is the `PING_TOKEN` secret of `dms`.
+- The handler sends the ping only after `State.record()` returns, or when no monitor is due. A run that stops early sends no ping. For example, a config that is not valid stops the run.
+- If the binding or `DMS_PING_TOKEN` is missing, the Worker sends no ping. The tests and `npm run dev` work with no `dms` Worker.
+- A failed ping goes to the log as `heartbeat failed`. It does not stop the run, and the alerts go out before the ping.
+- The `CHECKS` secret of `dms` must have the check `uptime-monitor`. A `timeout` of 1200 seconds gives a margin for a late cron run after a deploy.
+
+Cost on the free plan: one more subrequest for each run, and 1,440 `dms` requests and Durable Object requests each day.
 
 ## Development environment
 
@@ -69,12 +83,13 @@ Secrets go in Cloudflare only:
 ```sh
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_CHAT_ID
-npx wrangler secret put STATUS_TOKEN
+npx wrangler secret put STATUS_TOKEN     # optional, see Status endpoint
+npx wrangler secret put DMS_PING_TOKEN   # optional, see Heartbeat
 ```
 
 `STATUS_TOKEN` is optional. With no value, `GET /status` returns `404`. For `npm run dev`, put the secrets in `.dev.vars`. `.dev.vars.example` shows the format.
 
-A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set each such secret with `wrangler secret put NAME`. The schema rejects `secret:TELEGRAM_BOT_TOKEN` and `secret:TELEGRAM_CHAT_ID`, so a monitor cannot send these secrets to a target.
+A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set each such secret with `wrangler secret put NAME`. The schema rejects `secret:TELEGRAM_BOT_TOKEN`, `secret:TELEGRAM_CHAT_ID`, `secret:DMS_PING_TOKEN`, and `secret:STATUS_TOKEN`, so a monitor cannot send these secrets to a target.
 
 ## Status endpoint
 

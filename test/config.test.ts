@@ -57,6 +57,16 @@ describe("schema", () => {
 		const config = withMonitor({ http: { headers: { authorization: "secret:TELEGRAM_BOT_TOKEN" } } });
 		expect(error(config)).toMatch("monitors[0].http.headers.authorization");
 	});
+
+	it("rejects a header that sends the heartbeat token", () => {
+		const config = withMonitor({ http: { headers: { authorization: "secret:DMS_PING_TOKEN" } } });
+		expect(error(config)).toMatch("monitors[0].http.headers.authorization");
+	});
+
+	it("rejects a header that sends the status token", () => {
+		const config = withMonitor({ http: { headers: { authorization: "secret:STATUS_TOKEN" } } });
+		expect(error(config)).toMatch("monitors[0].http.headers.authorization");
+	});
 });
 
 describe("cron handler", () => {
