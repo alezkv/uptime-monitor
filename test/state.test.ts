@@ -183,6 +183,31 @@ describe("probe regions", () => {
 	});
 });
 
+describe("status", () => {
+	it("only reads, and shows the misses of a probe region", async () => {
+		await stub().record(config, results(["eeur"], ["eeur", "enam"]), ["weur"]);
+		const queries = await runInDurableObject(stub(), async (instance, state) => {
+			const exec = vi.spyOn(state.storage.sql, "exec");
+			await instance.status(config);
+			return exec.mock.calls.map((c) => c[0]);
+		});
+		expect(queries.length).toBeGreaterThan(0);
+		for (const q of queries) expect(q).toMatch(/^SELECT /);
+
+		const s = await stub().status(config);
+		expect(s.probes).toEqual([
+			{ region: "weur", misses: 1, alerted: false },
+			{ region: "eeur", misses: 0, alerted: false },
+			{ region: "enam", misses: 0, alerted: false },
+		]);
+		expect(s.monitors[0].regions.map((r) => [r.region, r.fails, r.last?.colo ?? null])).toEqual([
+			["weur", 0, null],
+			["eeur", 1, "WAW"],
+			["enam", 0, "EWR"],
+		]);
+	});
+});
+
 describe("text", () => {
 	it("formats a duration", () => {
 		expect(duration(10_000)).toBe("1 min");

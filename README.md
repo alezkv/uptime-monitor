@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that checks HTTP and TCP endpoints from more than one region and sends a Telegram alert when an endpoint goes down. It runs on the Workers free plan.
 
-Status: the code for phases 1 to 5 is complete, and the tests pass. The Worker runs on Cloudflare since 2026-11-01, and a test alert reached Telegram.
+Status: the code for phases 1 to 5 is complete, and the tests pass. The Worker runs on Cloudflare since 2026-11-01, and a test alert reached Telegram. The status endpoint of phase 7 is complete, but it is not deployed.
 
 ## How it works
 
@@ -11,6 +11,7 @@ Status: the code for phases 1 to 5 is complete, and the tests pass. The Worker r
 3. For each region, the Worker calls a `Probe` Durable Object. Each `Probe` object has a location hint for its region, so its checks leave from that region.
 4. The Worker sends all results to the `State` Durable Object.
 5. `State` counts the failures. It sends a Telegram message when a monitor goes down or recovers.
+6. `GET /status` shows the state of each monitor. It needs a token. See [Status endpoint](#status-endpoint).
 
 ## Alerts
 
@@ -48,6 +49,13 @@ The Nix flake supplies Node.js 22. The config script needs Node.js 22.18 or late
 | `npm run config:check -- <file>` | Validates a monitors YAML file. |
 | `npm run config:push -- <file>` | Validates the file, then writes it to the `config` key in KV. Add `--local` to write to the local KV of `npm run dev`. |
 
+## Endpoints
+
+| Request | Result |
+|---|---|
+| `GET /status` with `Authorization: Bearer <STATUS_TOKEN>` | The state of each monitor and region, as JSON. See [Status endpoint](#status-endpoint). |
+| Any other path | `404`. |
+
 ## Configuration
 
 The repository has no real list of monitors. `monitors.example.yaml` shows the format. Keep the real list in a file outside the repository.
@@ -61,9 +69,75 @@ Secrets go in Cloudflare only:
 ```sh
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_CHAT_ID
+npx wrangler secret put STATUS_TOKEN
 ```
 
+`STATUS_TOKEN` is optional. With no value, `GET /status` returns `404`. For `npm run dev`, put the secrets in `.dev.vars`. `.dev.vars.example` shows the format.
+
 A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set each such secret with `wrangler secret put NAME`. The schema rejects `secret:TELEGRAM_BOT_TOKEN` and `secret:TELEGRAM_CHAT_ID`, so a monitor cannot send these secrets to a target.
+
+## Status endpoint
+
+`GET /status` returns the state that `State` holds, as JSON. To read it:
+
+```sh
+curl -H "Authorization: Bearer $STATUS_TOKEN" https://uptime.<account>.workers.dev/status
+```
+
+The answers:
+
+| Status | When |
+|---|---|
+| `200` | The token is correct. The body is the JSON below. |
+| `401` | The token is missing or wrong. The body has no data. |
+| `404` | The `STATUS_TOKEN` secret is not set. The route is off. |
+| `405` | The method is not `GET`. |
+| `503` | KV has no valid config. |
+
+Each answer has `Cache-Control: no-store`. The Worker compares SHA-256 digests of the tokens in constant time.
+
+An example body:
+
+```json
+{
+  "now": 1761955260000,
+  "lastRun": 1761955200000,
+  "memorySince": 1761951600000,
+  "note": "last and lastRun are in memory only. They are null after the State object restarts, until the next check.",
+  "probes": [{ "region": "weur", "misses": 0, "alerted": false }],
+  "monitors": [
+    {
+      "id": "auth",
+      "name": "Authelia",
+      "type": "http",
+      "target": "https://auth.example.com/api/health",
+      "state": "up",
+      "since": null,
+      "regions": [
+        {
+          "region": "weur",
+          "state": "up",
+          "fails": 0,
+          "last": { "colo": "LHR", "ok": true, "status": 200, "ms": 95, "at": 1761955200100 }
+        }
+      ]
+    }
+  ]
+}
+```
+
+- All times are milliseconds since the epoch.
+- `state` of a monitor is the state that the alerts use. It changes only after Telegram accepts the alert. `since` is the time of the "down" alert.
+- `state` of a region is `down` after `failThreshold` failures in a row. The `fails` count stops at `failThreshold`.
+- `last` holds `colo`, `ok`, `status`, `error`, `ms`, and `at`. A field with no value is absent.
+- `probes` has each region that the config uses. `misses` counts the runs in a row with no result from that region. The count stops at 5.
+- The answer has the monitors of the current config only. It has no `http` settings, so it shows no header and no `secret:` value.
+
+`last` and `lastRun` are in memory only. A write on each run would use most of the free limit of SQLite rows. When Cloudflare restarts the `State` object, these fields are `null` until the next check. `memorySince` tells when the current copy of the object started. The `fails` counts and the up or down state are in SQLite, so a restart keeps them.
+
+Each request uses 1 Worker invocation, 1 KV read, and 1 Durable Object request. It writes no row.
+
+`wrangler.toml` has no `workers_dev` key, so each deploy enables `uptime.<account>.workers.dev`. Thus `/status` is open to the internet, and only the token protects it. Later, you can put Cloudflare Access in front of the route as a second lock.
 
 ## Local test run
 
@@ -71,6 +145,7 @@ A header value of the form `secret:NAME` makes the Worker read `env.NAME`. Set e
 2. Start the Worker: `npm run dev`.
 3. Start a cron run: `curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"`.
 4. Read the line that starts with `{"minute"` in the Wrangler output. It has one result for each monitor and region.
+5. Read the status: `curl -H "Authorization: Bearer <STATUS_TOKEN from .dev.vars>" http://localhost:8787/status`.
 
 Local Wrangler ignores location hints, so all regions show the same colo.
 
