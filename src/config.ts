@@ -12,8 +12,8 @@ export const REGIONS = ["wnam", "enam", "sam", "weur", "eeur", "apac", "apac-ne"
 export const Region = z.enum(REGIONS);
 export type Region = z.infer<typeof Region>;
 
-/** The probe sends these to the target, so a header must never name them. */
-const PRIVATE_SECRETS = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"];
+/** The probe sends a header to the target, so a header must never name one of these secrets. */
+const PRIVATE_SECRETS = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "DMS_PING_TOKEN"];
 
 const regions = z
 	.array(Region)
@@ -32,7 +32,7 @@ const header = z.string().refine((value) => {
 	if (!value.startsWith("secret:")) return true;
 	const name = value.slice("secret:".length);
 	return /^\w+$/.test(name) && !PRIVATE_SECRETS.includes(name);
-}, "a secret: value must name a secret, and not a Telegram secret");
+}, "a secret: value must name a secret, and not a Telegram or heartbeat secret");
 
 export const HttpCheck = z.strictObject({
 	method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]).optional(),

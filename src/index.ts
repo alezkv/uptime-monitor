@@ -1,4 +1,5 @@
 import { byRegion, isDue, parseConfig, type Region, resolve, type Result } from "./config";
+import { heartbeat } from "./heartbeat";
 import { Probe } from "./probe";
 import { State } from "./state";
 
@@ -32,7 +33,8 @@ export default {
 
 		const minute = Math.floor(controller.scheduledTime / 60_000);
 		const groups = [...byRegion(resolve(config).filter((m) => isDue(m, minute)))];
-		if (groups.length === 0) return;
+		// No monitor is due, but the run is complete.
+		if (groups.length === 0) return heartbeat(env);
 
 		// One failed region must not stop the others.
 		const settled = await Promise.allSettled(
@@ -54,6 +56,8 @@ export default {
 
 		console.log(JSON.stringify({ minute, results, missing }));
 		await env.STATE.getByName("state").record(config, results, missing);
+		// Only a run that got to this line pings. A run that stops early gives no ping, so `dms` sends an alert.
+		await heartbeat(env);
 	},
 
 	// Phase 7 (optional): GET /status.

@@ -14,6 +14,12 @@ crons = ["* * * * *"]
 binding = "CONFIG"
 id = "e448eed6c9ed43089f9d5856c7346451"
 
+# The heartbeat goes to the dead-mans-switch Worker. A Worker cannot fetch another
+# Worker on workers.dev by URL, so it needs a service binding. See src/heartbeat.ts.
+[[services]]
+binding = "DMS"
+service = "dms"
+
 # One object for each region, named "probe-<region>".
 [[durable_objects.bindings]]
 name = "PROBE"

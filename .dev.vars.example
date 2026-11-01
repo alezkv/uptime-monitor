@@ -1,3 +1,5 @@
 # Copy to .dev.vars for `wrangler dev`. Do not commit .dev.vars.
 TELEGRAM_BOT_TOKEN=123456:ABC
 TELEGRAM_CHAT_ID=123456789
+# Optional. With no value, the Worker sends no heartbeat to dms.
+DMS_PING_TOKEN=replace-with-the-dms-ping-token

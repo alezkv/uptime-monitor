@@ -2,6 +2,8 @@
 interface Secrets {
 	TELEGRAM_BOT_TOKEN: string;
 	TELEGRAM_CHAT_ID: string;
+	/** The `PING_TOKEN` of the `dms` Worker. Optional: with no token, the Worker sends no heartbeat. */
+	DMS_PING_TOKEN?: string;
 }
 interface Env extends Secrets {}
 declare namespace Cloudflare {
