@@ -20,6 +20,12 @@ id = "e448eed6c9ed43089f9d5856c7346451"
 binding = "DMS"
 service = "dms"
 
+# One data point for each check result, kept for 3 months. See src/history.ts.
+# The free limit is 100,000 points per day. 14 monitors in 3 regions write about 54,000.
+[[analytics_engine_datasets]]
+binding = "HISTORY"
+dataset = "uptime_results"
+
 # One object for each region, named "probe-<region>".
 [[durable_objects.bindings]]
 name = "PROBE"

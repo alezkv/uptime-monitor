@@ -2,7 +2,7 @@
 
 A Cloudflare Worker that checks HTTP and TCP endpoints from more than one region and sends a Telegram alert when an endpoint goes down. It runs on the Workers free plan.
 
-Status: the Worker runs on Cloudflare since 2026-11-01, and a test alert reached Telegram. The heartbeat to `dms` and the status endpoint run since 2026-11-01 too. The tests pass.
+Status: the Worker runs on Cloudflare since 2026-11-01, and a test alert reached Telegram. The heartbeat to `dms` and the status endpoint run since 2026-11-01 too. The history in Analytics Engine is not deployed. The tests pass.
 
 ## How it works
 
@@ -13,6 +13,7 @@ Status: the Worker runs on Cloudflare since 2026-11-01, and a test alert reached
 5. `State` counts the failures. It sends a Telegram message when a monitor goes down or recovers.
 6. The Worker sends a heartbeat ping to the `dms` Worker. See [Heartbeat](#heartbeat).
 7. `GET /status` shows the state of each monitor. It needs a token. See [Status endpoint](#status-endpoint).
+8. The Worker writes each result to Workers Analytics Engine. See [History](#history).
 
 ## Alerts
 
@@ -44,6 +45,40 @@ After each complete run, the cron handler sends `POST /ping/uptime-monitor` to t
 
 Cost on the free plan: one more subrequest for each run, and 1,440 `dms` requests and Durable Object requests each day.
 
+## History
+
+The cron handler writes one data point for each check result to the Analytics Engine dataset `uptime_results`, through the binding `HISTORY`. Analytics Engine keeps the points for 3 months. The code is in `src/history.ts`.
+
+| Column | Value |
+|---|---|
+| `index1` | Monitor id |
+| `blob1` | Region |
+| `blob2` | Colo |
+| `blob3` | Error text, cut to 256 characters, or an empty string |
+| `double1` | Time of the check in ms |
+| `double2` | `1` when the check passed, `0` when it failed |
+| `double3` | HTTP status, or `0` for a TCP check or no response |
+
+- The order of the columns is the schema. Do not move a value. Add a new value at the end only.
+- A region whose `Probe` call failed has no result, so it writes no point.
+- A write that fails goes to the log as `history write failed`. It does not stop the run or the alerts.
+- If the binding is missing, the Worker writes no point.
+
+Cost on the free plan: the limit is 100,000 points each day. The points do not use a Durable Object request, a SQLite row, or a subrequest. 3 regions and one check each minute give 4,320 points each day for one monitor. Thus the limit allows about 23 monitors that run each minute.
+
+To read the history, make an API token with the permission **Account** > **Account Analytics** > **Read**. Then run:
+
+```sh
+export CF_ACCOUNT_ID=<account id from npx wrangler whoami>
+export CF_AE_TOKEN=<the token>
+npm run history -- uptime      # uptime % for each monitor, last 30 days
+npm run history -- latency     # p50 and p95 for each monitor and region, last 24 hours
+npm run history -- failures    # the last 100 failed checks
+npm run history -- counts 168  # failures for each monitor and region, last 7 days
+```
+
+The number after the query name sets the time range in hours. Each row of Analytics Engine stands for `_sample_interval` real points, so each query weights with that column.
+
 ## Development environment
 
 The Nix flake supplies Node.js 22. The config script needs Node.js 22.18 or later, because it runs a `.ts` file with no build step. Wrangler and Vitest are dev dependencies in `node_modules`.
@@ -61,6 +96,7 @@ The Nix flake supplies Node.js 22. The config script needs Node.js 22.18 or late
 | `npm run dev` | Starts a local Worker. To start a cron run, open `/__scheduled`. |
 | `npm run deploy` | Deploys the Worker. |
 | `npm run config:check -- <file>` | Validates a monitors YAML file. |
+| `npm run history -- <query> [hours]` | Queries the check history in Analytics Engine. See [History](#history). |
 | `npm run config:push -- <file>` | Validates the file, then writes it to the `config` key in KV. Add `--local` to write to the local KV of `npm run dev`. |
 
 ## Endpoints

@@ -1,5 +1,6 @@
 import { byRegion, type Config, isDue, parseConfig, type Region, resolve, type Result } from "./config";
 import { heartbeat } from "./heartbeat";
+import { writeHistory } from "./history";
 import { Probe } from "./probe";
 import { State } from "./state";
 
@@ -44,6 +45,8 @@ export default {
 		});
 
 		console.log(JSON.stringify({ minute, results, missing }));
+		// No await: the runtime sends the points after the response.
+		writeHistory(env, results);
 		await env.STATE.getByName("state").record(config, results, missing);
 		// Only a run that got to this line pings. A run that stops early gives no ping, so `dms` sends an alert.
 		await heartbeat(env);

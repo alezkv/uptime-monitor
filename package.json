@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p test && tsc --noEmit -p scripts",
     "types": "wrangler types",
     "config:check": "node scripts/config.ts check",
-    "config:push": "node scripts/config.ts push"
+    "config:push": "node scripts/config.ts push",
+    "history": "node scripts/history.ts"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.8",
